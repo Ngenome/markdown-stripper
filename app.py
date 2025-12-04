@@ -12,32 +12,77 @@ st.set_page_config(
 # --- Processing Functions ---
 
 def clean_xml_tags(text):
-    """Removes HTML/XML-like tags (e.g., <CodeGroup>, <Tip>) but keeps content."""
-    return re.sub(r'<[^>]+>', '', text)
+    """Removes HTML/XML-like tags (e.g., <CodeGroup>, <Tip>) but keeps content inside."""
+    # Remove self-closing tags like <img ... />
+    text = re.sub(r'<[^>]+/>', '', text)
+    # Remove opening and closing tags but keep content between them
+    text = re.sub(r'<[^>]+>', '', text)
+    return text
 
-def clean_code_blocks(text):
-    """Removes triple backtick code blocks and their content."""
-    return re.sub(r'```[\s\S]*?```', '', text)
+def clean_code_block_markers(text):
+    """Removes triple backtick markers and language hints, but KEEPS the code inside."""
+    # Remove opening ``` with optional language identifier (e.g., ```python, ```typescript  theme={null})
+    text = re.sub(r'^```[^\n]*\n?', '', text, flags=re.MULTILINE)
+    # Remove closing ```
+    text = re.sub(r'^```\s*$', '', text, flags=re.MULTILINE)
+    return text
 
 def clean_markdown_formatting(text):
-    """Removes standard markdown symbols to leave plain text."""
-    # Remove headings (# Header)
-    text = re.sub(r'^\s*#+\s*', '', text, flags=re.MULTILINE)
-    # Remove bold/italic (**text**, *text*)
+    """Removes markdown formatting symbols but keeps the text content."""
+    # Remove headings markers (# Header -> Header)
+    text = re.sub(r'^\s*#{1,6}\s*', '', text, flags=re.MULTILINE)
+    
+    # Remove bold (**text** -> text, __text__ -> text)
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)
-    # Remove blockquotes (>)
-    text = re.sub(r'^\s*>\s*', '', text, flags=re.MULTILINE)
-    # Remove links [text](url) -> text
+    text = re.sub(r'__([^_]+)__', r'\1', text)
+    
+    # Remove italic (*text* -> text, _text_ -> text) - be careful not to match list markers
+    text = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', text)
+    text = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'\1', text)
+    
+    # Remove strikethrough (~~text~~ -> text)
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)
+    
+    # Remove blockquote markers (> text -> text)
+    text = re.sub(r'^\s*>\s?', '', text, flags=re.MULTILINE)
+    
+    # Remove links but keep link text ([text](url) -> text)
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-    # Remove images ![alt](url) -> ''
-    text = re.sub(r'!\[[^\]]*\]\([^\)]+\)', '', text)
-    # Remove horizontal rules
-    text = re.sub(r'^-{3,}\s*$', '', text, flags=re.MULTILINE)
-    # Remove inline code `text` -> text
-    text = text.replace('`', '')
-    # Remove list markers
-    text = re.sub(r'^\s*[\*\-]\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove reference-style links ([text][ref] -> text)
+    text = re.sub(r'\[([^\]]+)\]\[[^\]]*\]', r'\1', text)
+    
+    # Remove link definitions ([ref]: url)
+    text = re.sub(r'^\s*\[[^\]]+\]:\s*\S+.*$', '', text, flags=re.MULTILINE)
+    
+    # Remove images entirely (![alt](url) -> nothing, or keep alt text)
+    text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'\1', text)
+    
+    # Remove horizontal rules (---, ***, ___)
+    text = re.sub(r'^[\-\*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    
+    # Remove inline code backticks but keep content (`code` -> code)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    
+    # Remove unordered list markers (* item, - item, + item -> item)
+    text = re.sub(r'^\s*[\*\-\+]\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove ordered list markers (1. item -> item)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    
+    # Remove task list markers (- [ ] or - [x])
+    text = re.sub(r'^\s*[\*\-\+]\s*\[[xX ]\]\s*', '', text, flags=re.MULTILINE)
+    
+    # Remove table formatting (|) - keep cell content
+    text = re.sub(r'\|', ' ', text)
+    text = re.sub(r'^\s*[-:]+\s*$', '', text, flags=re.MULTILINE)  # Remove table separator rows
+    
+    # Remove HTML comments
+    text = re.sub(r'<!--[\s\S]*?-->', '', text)
+    
+    # Remove footnotes
+    text = re.sub(r'\[\^[^\]]+\]', '', text)
+    
     return text
 
 def normalize_whitespace(text):
@@ -60,15 +105,15 @@ def process_text(text, settings):
     """Master processing function based on settings dictionary."""
     processed = text
     
-    # 1. Strip Code Blocks
+    # 1. Strip Code Block Markers (keeps code content)
     if settings.get('strip_code_blocks'):
-        processed = clean_code_blocks(processed)
+        processed = clean_code_block_markers(processed)
         
-    # 2. Strip XML/HTML Components
+    # 2. Strip XML/HTML Tags (keeps content inside)
     if settings.get('strip_xml'):
         processed = clean_xml_tags(processed)
         
-    # 3. Strip Standard Markdown
+    # 3. Strip Standard Markdown Formatting (keeps text content)
     if settings.get('strip_markdown'):
         processed = clean_markdown_formatting(processed)
         
@@ -112,15 +157,15 @@ settings = {
 
 if mode == "Plain Text (Default)":
     st.sidebar.markdown("---")
-    st.sidebar.write("**Action:** Removes `XML tags`, `Code Blocks`, and `Markdown formatting`. Returns pure text.")
+    st.sidebar.write("**Action:** Removes `XML tags`, `code block markers`, and `Markdown formatting` while **keeping all content**.")
     settings['strip_code_blocks'] = True
     settings['strip_xml'] = True
     settings['strip_markdown'] = True
 
 elif mode == "Standard Markdown Only":
     st.sidebar.markdown("---")
-    st.sidebar.write("**Action:** Removes `XML tags` (like `<Tip>`) but **keeps** standard Markdown headers, lists, and links.")
-    settings['strip_code_blocks'] = False # Usually keep code in MD, but strip XML wrappers
+    st.sidebar.write("**Action:** Removes `XML tags` (like `<Tip>`) but **keeps** Markdown formatting and code blocks.")
+    settings['strip_code_blocks'] = False
     settings['strip_xml'] = True
     settings['strip_markdown'] = False
 
@@ -129,21 +174,21 @@ elif mode == "Custom":
     st.sidebar.write("**Custom Filters:**")
     
     settings['strip_xml'] = st.sidebar.checkbox(
-        "Strip XML/React Components (<Tag>)", 
+        "Strip XML/HTML Tags", 
         value=True,
-        help="Removes tags like <CodeGroup>, <Tip>, but keeps the text inside."
+        help="Removes tags like <CodeGroup>, <Tip>, <Tab> but keeps content inside."
     )
     
     settings['strip_code_blocks'] = st.sidebar.checkbox(
-        "Strip Code Blocks (```)", 
+        "Strip Code Block Markers (```)", 
         value=True,
-        help="Removes code blocks entirely."
+        help="Removes ``` markers and language hints, but KEEPS the code inside."
     )
     
     settings['strip_markdown'] = st.sidebar.checkbox(
-        "Strip Markdown Formatting (**bold**, # Header)", 
+        "Strip Markdown Formatting", 
         value=True,
-        help="Removes visual formatting symbols."
+        help="Removes #, **, *, [], (), etc. but keeps the text content."
     )
 
 # --- Processing & Output ---
