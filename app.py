@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+import tiktoken
 
 # --- Setup Page Config ---
 st.set_page_config(
@@ -43,6 +44,17 @@ def normalize_whitespace(text):
     """Reduces multiple newlines to single/double newlines."""
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
+
+# --- Token Counter ---
+@st.cache_resource
+def get_tokenizer():
+    """Cache the tokenizer for performance."""
+    return tiktoken.get_encoding("cl100k_base")
+
+def count_tokens(text):
+    """Count tokens using tiktoken (GPT-4/Claude compatible)."""
+    enc = get_tokenizer()
+    return len(enc.encode(text))
 
 def process_text(text, settings):
     """Master processing function based on settings dictionary."""
@@ -140,20 +152,23 @@ if input_text:
     # Run the cleaner
     output_text = process_text(input_text, settings)
     
-    # Calculate crude token estimation (approx 4 chars per token)
-    orig_chars = len(input_text)
-    new_chars = len(output_text)
-    savings = orig_chars - new_chars
-    pct_savings = (savings / orig_chars * 100) if orig_chars > 0 else 0
+    # Calculate token counts using tiktoken
+    orig_tokens = count_tokens(input_text)
+    new_tokens = count_tokens(output_text)
+    tokens_saved = orig_tokens - new_tokens
+    pct_savings = (tokens_saved / orig_tokens * 100) if orig_tokens > 0 else 0
     
     with col2:
         st.subheader("Cleaned Output")
         
-        # Stats container
-        st.caption(f"📉 **Reduction:** {pct_savings:.1f}% size reduction | **Chars removed:** {savings}")
+        # Token stats in metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Original Tokens", f"{orig_tokens:,}")
+        m2.metric("Final Tokens", f"{new_tokens:,}")
+        m3.metric("Tokens Saved", f"{tokens_saved:,}", f"-{pct_savings:.1f}%")
         
         # Output Area
-        st.text_area("Result", value=output_text, height=500, label_visibility="collapsed")
+        st.text_area("Result", value=output_text, height=450, label_visibility="collapsed")
         
 else:
     with col2:
