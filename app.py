@@ -73,10 +73,6 @@ def clean_markdown_formatting(text):
     # Remove task list markers (- [ ] or - [x])
     text = re.sub(r'^\s*[\*\-\+]\s*\[[xX ]\]\s*', '', text, flags=re.MULTILINE)
     
-    # Remove table formatting (|) - keep cell content
-    text = re.sub(r'\|', ' ', text)
-    text = re.sub(r'^\s*[-:]+\s*$', '', text, flags=re.MULTILINE)  # Remove table separator rows
-    
     # Remove HTML comments
     text = re.sub(r'<!--[\s\S]*?-->', '', text)
     
@@ -135,7 +131,8 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("Input Text")
-    input_text = st.text_area("Paste content here...", height=500, placeholder="# Example Input...")
+    input_text = st.text_area("Paste content here...", height=450, placeholder="# Example Input...")
+    process_button = st.button("🚀 Process", type="primary", use_container_width=True)
 
 # --- Sidebar Configuration ---
 st.sidebar.header("Configuration")
@@ -193,13 +190,23 @@ elif mode == "Custom":
 
 # --- Processing & Output ---
 
-if input_text:
+# Use session state to store output
+if 'output_text' not in st.session_state:
+    st.session_state.output_text = None
+    st.session_state.orig_tokens = 0
+    st.session_state.new_tokens = 0
+
+if process_button and input_text:
     # Run the cleaner
-    output_text = process_text(input_text, settings)
+    st.session_state.output_text = process_text(input_text, settings)
+    st.session_state.orig_tokens = count_tokens(input_text)
+    st.session_state.new_tokens = count_tokens(st.session_state.output_text)
+
+if st.session_state.output_text:
+    output_text = st.session_state.output_text
+    orig_tokens = st.session_state.orig_tokens
+    new_tokens = st.session_state.new_tokens
     
-    # Calculate token counts using tiktoken
-    orig_tokens = count_tokens(input_text)
-    new_tokens = count_tokens(output_text)
     tokens_saved = orig_tokens - new_tokens
     pct_savings = (tokens_saved / orig_tokens * 100) if orig_tokens > 0 else 0
     
@@ -213,9 +220,13 @@ if input_text:
         m3.metric("Tokens Saved", f"{tokens_saved:,}", f"-{pct_savings:.1f}%")
         
         # Output Area
-        st.text_area("Result", value=output_text, height=450, label_visibility="collapsed")
+        st.text_area("Result", value=output_text, height=400, label_visibility="collapsed")
+        
+        # Copy button
+        st.button("📋 Copy to Clipboard", use_container_width=True, 
+                  on_click=lambda: st.write("<script>navigator.clipboard.writeText(`" + output_text.replace('`', '\\`') + "`)</script>", unsafe_allow_html=True))
         
 else:
     with col2:
         st.subheader("Cleaned Output")
-        st.info("Waiting for input text...")
+        st.info("Paste content and click **Process** to strip formatting.")
